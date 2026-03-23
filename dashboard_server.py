@@ -74,6 +74,14 @@ def push_log(msg: str):
 
 if FLASK_AVAILABLE:
 
+    @app.route("/")
+    def index():
+        """Serve a dashboard principal."""
+        import os
+        from flask import send_from_directory
+        base = os.path.dirname(os.path.abspath(__file__))
+        return send_from_directory(base, "dashboard_v2.html")
+
     @app.route("/api/state")
     def api_state():
         """Snapshot completo do estado — chamado pela dashboard ao iniciar."""
