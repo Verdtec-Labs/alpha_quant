@@ -1,0 +1,22 @@
+# =============================================================================
+# ALPHA-QUANT · requirements.txt
+# pip install -r requirements.txt
+# =============================================================================
+
+# Dados e cálculo
+pandas>=2.0.0
+numpy>=1.24.0
+
+# API do Claude
+anthropic>=0.25.0
+
+# Servidor da dashboard
+flask>=3.0.0
+
+# Carregamento do .env
+python-dotenv>=1.0.0
+
+# MetaTrader 5 — apenas Windows
+# pip install MetaTrader5
+# (descomenta a linha abaixo se estiveres no Windows)
+# MetaTrader5>=5.0.45
