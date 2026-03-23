@@ -9,6 +9,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -38,9 +39,22 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 def setup_logging():
-    import os
+    import os, io
     os.makedirs("logs", exist_ok=True)
-    handlers = [logging.StreamHandler(sys.stdout)]
+
+    # Garante UTF-8 no stream de consola (Windows usa CP1252 por defeito)
+    stream = sys.stdout
+    if sys.platform == "win32":
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+        elif hasattr(stream, "buffer"):
+            stream = io.TextIOWrapper(stream.buffer, encoding="utf-8",
+                                      errors="replace", line_buffering=True)
+
+    handlers = [logging.StreamHandler(stream)]
     try:
         handlers.append(logging.FileHandler(SYSTEM.log_path, encoding="utf-8"))
     except Exception:
@@ -96,6 +110,9 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
         self._dashboard_thread = None
 
         # Sinal pendente a aguardar decisão humana
+        # Lock necessário: _pending_signal é acedido da thread do Scout
+        # e da thread do dashboard (human_decision via HTTP)
+        self._pending_lock    = threading.Lock()
         self._pending_signal: Optional[TradeSignal] = None
         self._pending_since:  Optional[float] = None
         self._signal_timeout  = 90.0  # segundos até expirar
@@ -173,8 +190,9 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
 
                 # 3. Scout: procura novos setups (no fecho de cada vela M15)
                 current_candle_id = self._get_current_candle_id()
-                if (current_candle_id != self._last_scout_candle
-                        and self._pending_signal is None):
+                with self._pending_lock:
+                    has_pending = self._pending_signal is not None
+                if (current_candle_id != self._last_scout_candle and not has_pending):
                     self._run_scout()
                     self._last_scout_candle = current_candle_id
 
@@ -284,7 +302,7 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
             snap_m15=snap_m15,
             snap_h1=snap_h1,
             snap_h4=snap_h4,
-            account_balance=self.risk.daily.current_balance if self.risk.daily else account.balance if account else 500.0,
+            account_balance=self.risk.daily.current_balance if self.risk.daily else 500.0,
             news_warning="none",
             sd_context=sd_ctx,
         )
@@ -312,8 +330,9 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
             return
 
         # Guarda sinal pendente e notifica o utilizador
-        self._pending_signal = signal
-        self._pending_since  = time.time()
+        with self._pending_lock:
+            self._pending_signal = signal
+            self._pending_since  = time.time()
 
         self.db.log_signal(symbol, signal.direction, score_m15, "PENDING_HUMAN", signal.reasoning[:100])
         self._notify_signal(signal, kill_zone, in_kz)
@@ -399,13 +418,13 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
         Chamado externamente (dashboard, WhatsApp, CLI) quando o utilizador
         aprova ou rejeita um sinal pendente.
         """
-        if self._pending_signal is None:
-            logger.warning("Não há sinal pendente para decisão")
-            return
-
-        signal = self._pending_signal
-        self._pending_signal = None
-        self._pending_since  = None
+        with self._pending_lock:
+            if self._pending_signal is None:
+                logger.warning("Não há sinal pendente para decisão")
+                return
+            signal = self._pending_signal
+            self._pending_signal = None
+            self._pending_since  = None
 
         if not approved:
             self.db.log_signal(signal.symbol, signal.direction, signal.confidence, "REJECTED_HUMAN", "Utilizador rejeitou")
@@ -417,16 +436,18 @@ class AlphaQuantOrchestrator(HeartbeatWriter):
 
     def _check_pending_expiry(self):
         """Cancela sinal pendente se expirou sem resposta."""
-        if self._pending_signal is None or self._pending_since is None:
-            return
-
-        elapsed = time.time() - self._pending_since
-        if elapsed > self._signal_timeout:
+        with self._pending_lock:
+            if self._pending_signal is None or self._pending_since is None:
+                return
+            elapsed = time.time() - self._pending_since
+            if elapsed <= self._signal_timeout:
+                return
             signal = self._pending_signal
             self._pending_signal = None
             self._pending_since  = None
-            self.db.log_signal(signal.symbol, signal.direction, signal.confidence, "EXPIRED", f"Sem resposta em {self._signal_timeout:.0f}s")
-            logger.info(f"Sinal expirado: {signal.direction} {signal.symbol} (sem resposta em {elapsed:.0f}s)")
+
+        self.db.log_signal(signal.symbol, signal.direction, signal.confidence, "EXPIRED", f"Sem resposta em {self._signal_timeout:.0f}s")
+        logger.info(f"Sinal expirado: {signal.direction} {signal.symbol} (sem resposta em {elapsed:.0f}s)")
 
     # -------------------------------------------------------------------------
     # EXECUÇÃO DE ORDEM

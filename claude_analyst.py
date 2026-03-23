@@ -446,6 +446,7 @@ class ClaudeAnalyst:
                     max_tokens=ANTHROPIC_MAX_TOKENS,
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_message}],
+                    timeout=SYSTEM.api_timeout_seconds,
                 )
 
                 raw = response.content[0].text.strip()

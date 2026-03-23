@@ -12,6 +12,15 @@ import argparse
 import logging
 import os
 import sys
+
+# Reconfigura stdout/stderr para UTF-8 antes de qualquer import
+# (evita UnicodeEncodeError no Windows com CP1252 quando os logs têm €, →, ✓)
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from mt5_connector import MT5Connector
 
 # ── Carrega .env ──────────────────────────────────────────────────────────────
@@ -190,8 +199,9 @@ if args.dashboard:
 
     db   = TradeDatabase()
     risk = RiskManager(db)
-    account = conn.get_account_info() if conn.connect() else None
-    balance = account.balance if account else float(os.environ.get("DEMO_BALANCE", "500.0"))
+    _dash_conn = MT5Connector()
+    _account   = _dash_conn.get_account_info() if _dash_conn.connect() else None
+    balance    = _account.balance if _account else float(os.environ.get("DEMO_BALANCE", "500.0"))
     risk.start_day(balance)
     init_server(db, risk)
     run_server(port=args.port)

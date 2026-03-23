@@ -153,6 +153,13 @@ class DidiStrategyCalculator:
             high   = df["high"].values.astype(float)
             low    = df["low"].values.astype(float)
 
+            # Rejeita se existirem NaN nos dados de entrada
+            # (pode acontecer com símbolos novos ou dados parciais do MT5)
+            if (np.isnan(close).any() or np.isnan(high).any() or np.isnan(low).any()):
+                nan_count = int(np.isnan(close).sum())
+                logger.warning(f"{timeframe}: {nan_count} valores NaN nos candles — a ignorar símbolo")
+                return None
+
             didi      = self._calc_didi(close)
             stoch     = self._calc_stochastic(high, low, close)
             bollinger = self._calc_bollinger(close)

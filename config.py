@@ -22,7 +22,7 @@ MT5_PATH     = os.getenv(                             # Caminho do terminal MT5
 # ANTHROPIC API
 # -----------------------------------------------------------------------------
 ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL     = "claude-sonnet-4-20250514"
+ANTHROPIC_MODEL     = "claude-sonnet-4-6"
 ANTHROPIC_MAX_TOKENS = 1024  # Suficiente para JSON de análise
 
 # -----------------------------------------------------------------------------

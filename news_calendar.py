@@ -175,7 +175,16 @@ class NewsCalendar:
         """Actualiza o cache se expirou."""
         if time.time() - self._last_fetch < self._cache_ttl:
             return
-        self._fetch()
+        try:
+            self._fetch()
+        except Exception as e:
+            # Fail-safe: se _fetch() falhar completamente, usa emergência
+            logger.error(f"Calendário: falha crítica no fetch ({e}) — a usar calendário de emergência")
+            events = self._emergency_events()
+            with self._lock:
+                self._events = events
+                self._last_fetch = time.time()
+            self._fetch_errors += 1
 
     def _fetch(self):
         """Tenta buscar eventos — ForexFactory primeiro, depois fallback."""
